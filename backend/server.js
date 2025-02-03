@@ -1,48 +1,47 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const cors = require('cors');
-const qs = require('qs'); // Import qs module
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+import qs from 'qs'; // Import qs module
+import authRouter from './routes/autoRoutes.js'; // Ensure the correct path and file name
+import { connectDB } from './config/db.js'; // Import only connectDB
 
 const app = express();
-const port = 3001;
+const port = 3000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-const AMADEUS_API_KEY = process.env.AMADEUS_API_KEY;
-const AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET;
+// Routes
+app.use('/auth', authRouter);
 
-let accessToken = '';
-let tokenExpiryTime = 0;
-let tokenPromise = null; // Prevent multiple token requests at once
+// Connect to MongoDB
+connectDB(); // Call the function to connect to the database
+
+// Amadeus API integration
+let accessToken = null;
+let tokenExpiryTime = null;
 
 const getAccessToken = async () => {
-  if (tokenPromise) return tokenPromise;
-
-  tokenPromise = axios
-    .post('https://test.api.amadeus.com/v1/security/oauth2/token', qs.stringify({
+  const tokenResponse = await axios.post(
+    'https://test.api.amadeus.com/v1/security/oauth2/token',
+    qs.stringify({
       grant_type: 'client_credentials',
-      client_id: AMADEUS_API_KEY,
-      client_secret: AMADEUS_API_SECRET,
-    }), {
+      client_id: process.env.AMADEUS_CLIENT_ID,
+      client_secret: process.env.AMADEUS_CLIENT_SECRET,
+    }),
+    {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-    })
-    .then(response => {
-      accessToken = response.data.access_token;
-      tokenExpiryTime = Date.now() + response.data.expires_in * 1000; // Set token expiry time
-      tokenPromise = null;
-      return accessToken;
-    })
-    .catch(error => {
-      console.error('Error fetching access token:', error.response?.data || error.message);
-      tokenPromise = null;
-      throw error;
-    });
+    }
+  );
 
-  return tokenPromise;
+  accessToken = tokenResponse.data.access_token;
+  tokenExpiryTime = Date.now() + tokenResponse.data.expires_in * 1000;
+
+  return tokenResponse.data.access_token;
 };
 
 const ensureAccessToken = async () => {
@@ -67,46 +66,15 @@ const getCityCode = async (location) => {
   return response.data.data[0].iataCode;
 };
 
-app.post('/generate-trip-location', async (req, res) => {
-  const { location, days, budget, travelGroup } = req.body;
-
-  console.log('Received request:', { location, days, budget, travelGroup });
-
+app.get('/city-code/:location', async (req, res) => {
   try {
-    await ensureAccessToken();
-
-    const cityCode = await getCityCode(location);
-    console.log('City code:', cityCode);
-    const tripLocation = location;
-
-    // Here you can add additional logic to process days, budget, and travelGroup
-    // For example, you might want to use these parameters to fetch additional data or customize the response
-
-    res.json({ tripLocation, days, budget, travelGroup });
+    const cityCode = await getCityCode(req.params.location);
+    res.json({ cityCode });
   } catch (error) {
-    console.error('Error generating trip location:', error);
-
-    // Refresh the access token if it has expired and retry the request
-    if (error.response && error.response.status === 401) {
-      try {
-        await getAccessToken();
-        const cityCode = await getCityCode(location);
-        const tripLocation = location;
-
-        res.json({ tripLocation, days, budget, travelGroup });
-      } catch (retryError) {
-        console.error('Error retrying trip location generation:', retryError);
-        res.status(500).json({ error: 'Failed to generate trip location' });
-      }
-    } else if (error.response && error.response.status === 404) {
-      console.error('City code not found:', error.response.data);
-      res.status(404).json({ error: 'City code not found' });
-    } else {
-      res.status(500).json({ error: 'Failed to generate trip location' });
-    }
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server running on http://localhost:${port}`);
 });
