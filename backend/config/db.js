@@ -1,18 +1,17 @@
 import mongoose from "mongoose";
 
-// config/db.js
-
 // Database connection function
 export const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI,{  serverSelectionTimeoutMS: 50000});
+    await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 100000, // Increase timeout
+    });
     console.log('DB connected');
   } catch (error) {
     console.error('DB connection failed:', error.message);
+    process.exit(1); // Exit the process with failure
   }
 };
-
-
 
 // User schema
 const userSchema = new mongoose.Schema({
@@ -22,7 +21,6 @@ const userSchema = new mongoose.Schema({
 });
 
 // User model
-const userModel = mongoose.model("user", userSchema);
+const userModel = mongoose.model("User", userSchema);
 
 export default userModel;
-
